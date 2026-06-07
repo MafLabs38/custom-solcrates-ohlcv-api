@@ -174,7 +174,7 @@ router.get('/:address', async (req, res) => {
     }
 });
 
-// POST /api/tokens - Ajoute un nouveau token
+// POST /api/tokens - Ajoute un nouveau token (avec métadonnées auto-fetch)
 router.post('/',
     [
         body('contract_address')
@@ -184,14 +184,15 @@ router.post('/',
             .custom(validateSolanaAddress)
             .withMessage('Adresse Solana invalide'),
         body('symbol')
+            .optional()
             .trim()
-            .notEmpty()
-            .withMessage('Le symbole est requis')
     ],
     validate,
     async (req, res) => {
         try {
-            const { contract_address, symbol } = req.body;
+            const { contract_address } = req.body;
+            let { symbol } = req.body;
+
             logger.info('POST /tokens - Tentative d\'ajout:', { contract_address, symbol });
 
             // Vérifier si le token existe déjà
@@ -204,8 +205,40 @@ router.post('/',
                 });
             }
 
+            // Si pas de symbol fourni, récupérer les métadonnées automatiquement
+            if (!symbol) {
+                logger.info('POST /tokens - Récupération auto des métadonnées...');
+                const tokenMetadataService = require('../services/TokenMetadataService');
+
+                // Récupérer les métadonnées (sans stocker encore)
+                let metadata = await tokenMetadataService.fetchFromDexScreener(contract_address);
+                if (!metadata || !metadata.symbol) {
+                    metadata = await tokenMetadataService.fetchFromJupiter(contract_address);
+                }
+
+                if (!metadata || !metadata.symbol) {
+                    return res.status(404).json({
+                        status: 'error',
+                        message: 'Impossible de récupérer les informations du token. Veuillez fournir le symbole manuellement.'
+                    });
+                }
+
+                symbol = metadata.symbol;
+                logger.info(`POST /tokens - Symbol trouvé: ${symbol}`);
+            }
+
             // Créer le nouveau token avec status 'pending'
             const newToken = await Token.create(contract_address, symbol);
+
+            // Récupérer et stocker les métadonnées (incluant téléchargement du logo)
+            try {
+                const tokenMetadataService = require('../services/TokenMetadataService');
+                const metadata = await tokenMetadataService.fetchAndStoreMetadata(contract_address);
+                logger.info('POST /tokens - Métadonnées stockées:', metadata);
+            } catch (metadataError) {
+                logger.warn('POST /tokens - Erreur métadonnées (non bloquant):', metadataError.message);
+                // Continue même si les métadonnées échouent
+            }
 
             // NE PAS ajouter aux collecteurs temps réel tout de suite
             // Ils seront ajoutés automatiquement après l'initialisation historique

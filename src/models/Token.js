@@ -57,22 +57,37 @@ class TokenFinal {
 
     static async getAllActive() {
         try {
-            logger.debug('Récupération de tous les tokens actifs depuis SQLite');
+            logger.debug('Récupération de tous les tokens actifs avec métadonnées depuis SQLite');
 
-            // LOGIQUE SIMPLE : Récupérer tous les tokens actifs depuis SQLite
-            // Pas de filtre temporel, pas de dépendance InfluxDB
-            const activeTokens = sqliteManager.getAllActiveTokens();
-            
-            // Formater pour maintenir la compatibilité avec l'ancienne API
-            const formattedTokens = activeTokens.map(token => ({
+            // Récupérer tous les tokens actifs avec leurs métadonnées
+            const tokensWithMetadata = sqliteManager.getAllTokensWithMetadata();
+
+            // Formater les données pour inclure les métadonnées séparées
+            const formattedTokens = tokensWithMetadata.map(token => ({
                 contract_address: token.contract_address,
                 symbol: token.symbol,
-                is_active: Boolean(token.is_active) // Convertir 1/0 en true/false
+                is_active: Boolean(token.is_active),
+                initialization_status: token.initialization_status || null,
+                initialization_progress: token.initialization_progress || 0,
+                initialization_error: token.initialization_error || null,
+                metadata: token.logo_url || token.metadata_name ? {
+                    name: token.metadata_name || null,
+                    logo_url: token.logo_url || null,
+                    description: token.description || null,
+                    website: token.website || null,
+                    twitter: token.twitter || null,
+                    telegram: token.telegram || null,
+                    discord: token.discord || null,
+                    coingecko_id: token.coingecko_id || null,
+                    coinmarketcap_id: token.coinmarketcap_id || null,
+                    decimals: token.metadata_decimals || null,
+                    total_supply: token.total_supply || null
+                } : null
             }));
-            
-            logger.info(`${formattedTokens.length} tokens actifs trouvés dans SQLite`);
+
+            logger.info(`${formattedTokens.length} tokens actifs avec métadonnées trouvés`);
             return formattedTokens;
-            
+
         } catch (error) {
             logger.error('Erreur lors de la récupération des tokens actifs:', error);
             throw error;
@@ -162,6 +177,11 @@ class TokenFinal {
 
     static getInitializationStats() {
         return sqliteManager.getInitializationStats();
+    }
+
+    // Alias pour compatibilité
+    static async getByAddress(contractAddress) {
+        return this.findByAddress(contractAddress);
     }
 }
 
