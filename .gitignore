@@ -25,3 +25,9 @@ docker-compose.override.yml
 
 # InfluxDB data
 influxdb2/
+
+# Local data — DB files, logos, backups
+data/database.db
+data/*.db
+data/*.db.backup-*
+data/logos/

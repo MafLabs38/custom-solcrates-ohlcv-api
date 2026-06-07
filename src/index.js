@@ -5,6 +5,7 @@ const swaggerDocument = require('./config/swagger');
 const tokensRouter = require('./routes/tokens');
 const ohlcvRouter = require('./routes/ohlcv');
 const backfillRouter = require('./routes/backfill');
+const metadataRouter = require('./routes/metadata');
 const PriceCollector = require('./services/PriceCollector');
 const VolumeCollector = require('./services/VolumeCollector');
 const CandleBuilder = require('./services/CandleBuilder');
@@ -81,10 +82,14 @@ app.use((err, req, res, next) => {
     res.status(500).json({ status: 'error', message: 'Erreur interne du serveur' });
 });
 
-// Routes
+// Route pour servir les logos statiques
+app.use('/logos', express.static('data/logos'));
+
+// Routes API
 app.use('/api/tokens', tokensRouter);
 app.use('/api/ohlcv', ohlcvRouter);
 app.use('/api/backfill', backfillRouter);
+app.use('/api/metadata', metadataRouter);
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
 // Initialisation des collecteurs

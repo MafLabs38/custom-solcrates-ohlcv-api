@@ -56,6 +56,27 @@ class SQLiteManager {
             )
         `);
 
+        // Table des métadonnées de tokens (logo, nom complet, description, etc.)
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS token_metadata (
+                contract_address TEXT PRIMARY KEY,
+                name TEXT,
+                logo_url TEXT,
+                description TEXT,
+                website TEXT,
+                twitter TEXT,
+                telegram TEXT,
+                discord TEXT,
+                coingecko_id TEXT,
+                coinmarketcap_id TEXT,
+                decimals INTEGER DEFAULT 9,
+                total_supply TEXT,
+                fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (contract_address) REFERENCES tokens(contract_address) ON DELETE CASCADE
+            )
+        `);
+
         // Migrer les données existantes si nécessaire
         this.migrateExistingTokens();
 
@@ -64,6 +85,7 @@ class SQLiteManager {
             CREATE INDEX IF NOT EXISTS idx_tokens_active ON tokens(is_active);
             CREATE INDEX IF NOT EXISTS idx_tokens_symbol ON tokens(symbol);
             CREATE INDEX IF NOT EXISTS idx_tokens_init_status ON tokens(initialization_status);
+            CREATE INDEX IF NOT EXISTS idx_token_metadata_address ON token_metadata(contract_address);
         `);
 
         logger.info('Tables SQLite créées avec succès');
@@ -250,6 +272,135 @@ class SQLiteManager {
                 COUNT(*) as count
             FROM tokens
             GROUP BY initialization_status
+        `);
+
+        return stmt.all();
+    }
+
+    // ============================================
+    // Méthodes pour la table token_metadata
+    // ============================================
+
+    createOrUpdateMetadata(contractAddress, metadata) {
+        const stmt = this.db.prepare(`
+            INSERT INTO token_metadata (
+                contract_address, name, logo_url, description, website,
+                twitter, telegram, discord, coingecko_id, coinmarketcap_id,
+                decimals, total_supply, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(contract_address) DO UPDATE SET
+                name = excluded.name,
+                logo_url = excluded.logo_url,
+                description = excluded.description,
+                website = excluded.website,
+                twitter = excluded.twitter,
+                telegram = excluded.telegram,
+                discord = excluded.discord,
+                coingecko_id = excluded.coingecko_id,
+                coinmarketcap_id = excluded.coinmarketcap_id,
+                decimals = excluded.decimals,
+                total_supply = excluded.total_supply,
+                updated_at = CURRENT_TIMESTAMP
+        `);
+
+        const result = stmt.run(
+            contractAddress,
+            metadata.name || null,
+            metadata.logo_url || null,
+            metadata.description || null,
+            metadata.website || null,
+            metadata.twitter || null,
+            metadata.telegram || null,
+            metadata.discord || null,
+            metadata.coingecko_id || null,
+            metadata.coinmarketcap_id || null,
+            metadata.decimals || 9,
+            metadata.total_supply || null
+        );
+
+        return result.changes > 0;
+    }
+
+    getMetadata(contractAddress) {
+        const stmt = this.db.prepare(`
+            SELECT *
+            FROM token_metadata
+            WHERE contract_address = ?
+        `);
+
+        return stmt.get(contractAddress);
+    }
+
+    getAllMetadata() {
+        const stmt = this.db.prepare(`
+            SELECT *
+            FROM token_metadata
+            ORDER BY contract_address
+        `);
+
+        return stmt.all();
+    }
+
+    deleteMetadata(contractAddress) {
+        const stmt = this.db.prepare(`
+            DELETE FROM token_metadata
+            WHERE contract_address = ?
+        `);
+
+        const result = stmt.run(contractAddress);
+        return result.changes > 0;
+    }
+
+    // Méthode pour récupérer un token avec ses métadonnées
+    getTokenWithMetadata(contractAddress) {
+        const stmt = this.db.prepare(`
+            SELECT
+                t.*,
+                m.name as metadata_name,
+                m.logo_url,
+                m.description,
+                m.website,
+                m.twitter,
+                m.telegram,
+                m.discord,
+                m.coingecko_id,
+                m.coinmarketcap_id,
+                m.decimals as metadata_decimals,
+                m.total_supply,
+                m.fetched_at as metadata_fetched_at,
+                m.updated_at as metadata_updated_at
+            FROM tokens t
+            LEFT JOIN token_metadata m ON t.contract_address = m.contract_address
+            WHERE t.contract_address = ?
+        `);
+
+        return stmt.get(contractAddress);
+    }
+
+    // Méthode pour récupérer tous les tokens avec leurs métadonnées
+    getAllTokensWithMetadata() {
+        const stmt = this.db.prepare(`
+            SELECT
+                t.*,
+                m.name as metadata_name,
+                m.logo_url,
+                m.description,
+                m.website,
+                m.twitter,
+                m.telegram,
+                m.discord,
+                m.coingecko_id,
+                m.coinmarketcap_id,
+                m.decimals as metadata_decimals,
+                m.total_supply,
+                m.fetched_at as metadata_fetched_at,
+                m.updated_at as metadata_updated_at
+            FROM tokens t
+            LEFT JOIN token_metadata m ON t.contract_address = m.contract_address
+            WHERE t.is_active = 1
+              AND (t.initialization_status = 'completed' OR t.initialization_status = 'skipped')
+            ORDER BY t.symbol
         `);
 
         return stmt.all();
